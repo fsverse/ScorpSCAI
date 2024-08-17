@@ -76,12 +76,21 @@ namespace ScorpSCAI
 
         private void InitializeTwitchClient()
         {
+            /*
             // Set your Twitch credentials here
-            string twitchUsername = "langdonw_ai";
-            string accessToken = "3p7rah44ajykv1v95acgbvkcvkqubw";
-            //string channelName = "Sc0rp10n66";
-            string channelName = "langdonw";
+            string twitchUsername = "langdonw_ai";  //the bots twitch username
+            string accessToken = "redacted";
+            string channelName = "langdonw";    // the channel you're hijacking
+            */
 
+
+            // Set your Twitch credentials here
+            string twitchUsername = "langdonw_ai";  //this can be whatever you set up.  It's the bot's twitch username
+            string accessToken = "";  // see https://twitchtokengenerator.com/
+            string channelName = "Sc0rp10n66";
+            
+
+            
 
             ConnectionCredentials credentials = new ConnectionCredentials(twitchUsername, accessToken);
             _client = new TwitchClient();
@@ -186,7 +195,7 @@ namespace ScorpSCAI
             {
                 // Prevent the "ding" sound on Enter
                 e.SuppressKeyPress = true;
-
+                textBoxToTwitch.Clear();
                 // Call the button click method or directly call your desired method
                 button2.PerformClick();  // Simulate a button click
             }
