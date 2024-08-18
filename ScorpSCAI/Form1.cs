@@ -175,6 +175,7 @@ namespace ScorpSCAI
         {
             var myjson = $@"{{
                           ""model"": ""llama3.1"",
+                          
                           ""messages"": [
                             {{
                                 ""role"": ""user"",
@@ -253,35 +254,28 @@ namespace ScorpSCAI
                             }
 
 
-                            // Simulate running the function
+                            
                             foreach (var arg in argumentDictionary)
                             {
                                 Debug.WriteLine($"{arg.Key}: {arg.Value}");
                             }
 
-                            // Add your logic here to actually run the function with the extracted arguments.
-                            // This is just a simulation.
+                            var text_response = "";
                             if (functionName == "AskWiki")
                             {
-                                var text_response = await AskWiki(argumentDictionary["searchterm"]);
-                                return text_response;
+                                text_response = text_response + await AskWiki(argumentDictionary["searchterm"]);
+                                
 
                             }
+                            return text_response;
                         }
 
-                        // Parse the response JSON
-                        //var jsonResponse = JsonConvert.DeserializeObject<ResponseData>(responseContent);
-
-                        // Append the new response to the top of textBox2
-                        //var response_text = jsonResponse.response;
-                        // Save the new context
-                        //savedContext = jsonResponse.context;
-                        //return response_text;
+                        
                         return "";
                     }
                     catch (Exception ex)
                     {
-                        //MessageBox.Show("Request failed\nError: " + ex.Message);
+                        
                         var response_text = "Error: " + ex.Message;
                         return response_text;
                     }
