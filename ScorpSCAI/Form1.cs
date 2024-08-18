@@ -17,6 +17,7 @@ using TwitchLib.Client.Models;
 using TwitchLib.Client;
 using TwitchLib.Communication.Interfaces;
 using TwitchLib.Client.Events;
+using System.IO;
 
 namespace ScorpSCAI
 {
@@ -168,7 +169,227 @@ namespace ScorpSCAI
         ///
         //////////////////////////////////////////////////////////////////////////
         ///
-        public async Task<string> AskOllamaAboutStarCitizen(string prompt)
+
+
+        public async Task<string> AskOllamaAboutStarCitizenv2(string prompt)
+        {
+            var myjson = $@"{{
+                          ""model"": ""llama3.1"",
+                          ""messages"": [
+                            {{
+                                ""role"": ""user"",
+                                ""content"": ""{prompt}""
+                            }}
+                          ],
+                          ""stream"": false,
+                          ""tools"": [
+                            {{
+                                ""type"": ""function"",
+                                ""function"": {{
+                                    ""name"": ""AskWiki"",
+                                    ""description"": ""Ask the Star Citizen Wiki for information"",
+                                    ""parameters"": {{
+                                        ""type"": ""object"",
+                                        ""properties"": {{
+                                            ""searchterm"": {{
+                                                ""type"": ""string"",
+                                                ""description"": ""A single search term""
+                                            }}
+                                        }},
+                                        ""required"": [""searchterm""]
+                                    }}
+                                }}
+                            }}
+                          ]
+                        }}";
+
+            var url = "http://127.0.0.1:11434/v1/chat/completions";  // Replace with the actual URL of your API endpoint
+
+
+
+            HttpClient client = new HttpClient();
+
+            var content = new StringContent(myjson, Encoding.UTF8, "application/json");
+
+            
+
+            try
+            {
+                var response = await client.PostAsync(url, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    try
+                    {
+
+                        var jsonObject = JObject.Parse(responseContent);
+                        var toolCalls = jsonObject["choices"][0]["message"]["tool_calls"];
+
+                        // Iterate over each tool call and extract the function name and arguments
+                        foreach (var toolCall in toolCalls)
+                        {
+                            string functionName = toolCall["function"]["name"].ToString();
+                            var argumentsProperty = toolCall["function"]["arguments"];
+
+                            // Convert arguments to a dictionary
+                            var argumentDictionary = new Dictionary<string, string>();
+
+                            // Handle the case where arguments might be a JSON string
+                            if (argumentsProperty.Type == JTokenType.String)
+                            {
+                                var argumentsJson = JObject.Parse(argumentsProperty.ToString());
+                                foreach (var arg in argumentsJson)
+                                {
+                                    argumentDictionary.Add(arg.Key, arg.Value.ToString());
+                                }
+                            }
+                            else if (argumentsProperty.Type == JTokenType.Object)
+                            {
+                                foreach (var arg in argumentsProperty)
+                                {
+                                    argumentDictionary.Add(arg.Path, arg.First.ToString());
+                                }
+                            }
+
+
+                            // Simulate running the function
+                            foreach (var arg in argumentDictionary)
+                            {
+                                Debug.WriteLine($"{arg.Key}: {arg.Value}");
+                            }
+
+                            // Add your logic here to actually run the function with the extracted arguments.
+                            // This is just a simulation.
+                            if (functionName == "AskWiki")
+                            {
+                                var text_response = await AskWiki(argumentDictionary["searchterm"]);
+                                return text_response;
+
+                            }
+                        }
+
+                        // Parse the response JSON
+                        //var jsonResponse = JsonConvert.DeserializeObject<ResponseData>(responseContent);
+
+                        // Append the new response to the top of textBox2
+                        //var response_text = jsonResponse.response;
+                        // Save the new context
+                        //savedContext = jsonResponse.context;
+                        //return response_text;
+                        return "";
+                    }
+                    catch (Exception ex)
+                    {
+                        //MessageBox.Show("Request failed\nError: " + ex.Message);
+                        var response_text = "Error: " + ex.Message;
+                        return response_text;
+                    }
+                }
+                else
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Request failed with status code {response.StatusCode}, content: {responseContent}");
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                Debug.WriteLine("Request failed");
+                Debug.WriteLine("Error: " + ex.Message);
+                if (ex.InnerException != null)
+                {
+                    Debug.WriteLine("Inner Exception: " + ex.InnerException.Message);
+                }
+                throw;  // Rethrow the exception after logging
+            }
+        
+        }
+
+        public async Task<string> AskWiki(string prompt)
+        {
+            // post to Star Citizen wiki
+            try
+            {
+                var srsearch = prompt;
+                var (firstPageExtract, concatenatedTitles) = await SearchStarCitizenWikiAsync(srsearch);
+                Debug.WriteLine("Request was successful");
+                Debug.WriteLine("First Page Extract: " + firstPageExtract);
+                Debug.WriteLine("Concatenated Titles: " + concatenatedTitles);
+
+                //textBox4.Text = firstPageExtract;
+
+                var prompt_temp = "CIG says: " + firstPageExtract + "\n\n Other mentions are " + concatenatedTitles;
+                prompt = prompt_temp;
+                return prompt;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Request failed");
+                Debug.WriteLine("Error: " + ex.Message);
+                var text_response = "Error: " + ex.Message;
+                return text_response;
+            }
+        }
+
+
+
+        public static async Task<(string firstPageExtract, string concatenatedTitles)> SearchStarCitizenWikiAsync(string srsearch)
+        {
+            HttpClient client = new HttpClient();
+            var url = $"https://starcitizen.tools/api.php?action=query&format=json&list=search&continue=-%7C%7C&formatversion=1&srsearch={Uri.EscapeDataString(srsearch)}&srnamespace=0";
+
+            var response = await client.GetAsync(url);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var jsonResponse = JObject.Parse(responseContent);
+
+                var searchResults = jsonResponse["query"]["search"];
+                int firstPageId = (int)searchResults[0]["pageid"];
+                StringBuilder concatenatedTitles = new StringBuilder();
+                string firstPageExtract = await GetStarCitizenWikiPageAsync(firstPageId);
+
+                foreach (var result in searchResults)
+                {
+                    concatenatedTitles.Append(result["title"].ToString() + ",");
+                }
+
+                return (firstPageExtract, concatenatedTitles.ToString().Trim());
+            }
+            else
+            {
+                throw new HttpRequestException($"Request failed with status code {response.StatusCode}");
+            }
+        }
+
+        public static async Task<string> GetStarCitizenWikiPageAsync(int pageId)
+        {
+            HttpClient client = new HttpClient();
+            var url = $"https://starcitizen.tools/api.php?action=query&format=json&prop=extracts&pageids={pageId}&formatversion=1&exchars=1200";
+
+            var response = await client.GetAsync(url);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var jsonResponse = JObject.Parse(responseContent);
+
+                return jsonResponse["query"]["pages"][pageId.ToString()]["extract"].ToString();
+            }
+            else
+            {
+                throw new HttpRequestException($"Request failed with status code {response.StatusCode}");
+            }
+        }
+    
+
+
+
+
+
+
+    public async Task<string> AskOllamaAboutStarCitizen(string prompt)
         {
             using var ollama = new OllamaApiClient();
             var chat = ollama.Chat(
@@ -195,7 +416,7 @@ namespace ScorpSCAI
 
         private async void button1_Click(object sender, EventArgs e)
         {
-            var ollama_response_text = await AskOllamaAboutStarCitizen(textBox1.Text);
+            var ollama_response_text = await AskOllamaAboutStarCitizenv2(textBox1.Text);
             textBox2.Text = ollama_response_text;
         }
         private void textBox1_KeyDown(object sender, KeyEventArgs e)
@@ -271,7 +492,7 @@ namespace ScorpSCAI
             {
                 // remove first 4 chars of prompt
                 prompt = prompt.Substring(4);
-                text_response = await AskOllamaAboutStarCitizen(username + "says:" + prompt);
+                text_response = await AskOllamaAboutStarCitizenv2(username + "says:" + prompt);
 
             }
             else         // if we're not requesting Wiki data, just send the message to Ollama
@@ -376,7 +597,6 @@ namespace ScorpSCAI
     /// </summary>
 
 
-
     public class StarCitizenWiki
     {
         public string search_term { get; set; } = string.Empty;
@@ -385,6 +605,7 @@ namespace ScorpSCAI
 
 
     [OllamaTools]
+
     public interface IStarCitizenWikiFunctions
     {
         [Description("Search the Star Citizen wiki for a page extract")]
