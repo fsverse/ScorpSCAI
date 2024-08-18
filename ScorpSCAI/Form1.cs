@@ -23,6 +23,7 @@ namespace ScorpSCAI
     public partial class Form1 : Form
     {
         private TwitchClient _client;
+        private int[] savedContext = new int[] { };
 
         public Form1()
         {
@@ -35,7 +36,139 @@ namespace ScorpSCAI
 
         }
 
+
+        //////////////////////////////////////////////////////////////////////////
+        ///
+        ///                 LLAMA STUFF
+        ///
+        //////////////////////////////////////////////////////////////////////////
+        ///
+
+        public class ApiClient
+        {
+            private static readonly HttpClient client = new HttpClient();
+
+            public static async Task<string> PostToApiAsync(string prompt, int[] context, string model = "llama3.1", int numCtx = 22000, bool stream = false)
+            {
+                var url = "http://127.0.0.1:11434/api/generate";  // Replace with the actual URL of your API endpoint
+
+                var data = new
+                {
+                    model = model,
+                    options = new
+                    {
+                        num_ctx = numCtx
+                    },
+                    prompt = prompt,
+                    stream = stream,
+                    context = context  // Ensure this is an array of integers
+                };
+
+                var json = JsonConvert.SerializeObject(data);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                try
+                {
+                    var response = await client.PostAsync(url, content);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var responseContent = await response.Content.ReadAsStringAsync();
+                        return responseContent;
+                    }
+                    else
+                    {
+                        var responseContent = await response.Content.ReadAsStringAsync();
+                        throw new HttpRequestException($"Request failed with status code {response.StatusCode}, content: {responseContent}");
+                    }
+                }
+                catch (HttpRequestException ex)
+                {
+                    Debug.WriteLine("Request failed");
+                    Debug.WriteLine("Error: " + ex.Message);
+                    if (ex.InnerException != null)
+                    {
+                        Debug.WriteLine("Inner Exception: " + ex.InnerException.Message);
+                    }
+                    throw;  // Rethrow the exception after logging
+                }
+            }
+
+
+
+        }
+
+        // Define a class to deserialize the response
+        public class ResponseData
+        {
+            public string model { get; set; }
+            public string created_at { get; set; }
+            public string response { get; set; }
+            public bool done { get; set; }
+            public string done_reason { get; set; }
+            public int[] context { get; set; }
+            public long total_duration { get; set; }
+            public long load_duration { get; set; }
+            public int prompt_eval_count { get; set; }
+            public long prompt_eval_duration { get; set; }
+            public int eval_count { get; set; }
+            public long eval_duration { get; set; }
+        }
+
         public async Task<string> AskOllama(string prompt)
+        {
+            try
+            {
+                var response = await ApiClient.PostToApiAsync(prompt, savedContext);
+
+                // Parse the response JSON
+                var jsonResponse = JsonConvert.DeserializeObject<ResponseData>(response);
+
+                // Append the new response to the top of textBox2
+                var response_text = jsonResponse.response;
+                // Save the new context
+                savedContext = jsonResponse.context;
+                return response_text;
+
+            }
+            catch (Exception ex)
+            {
+                //MessageBox.Show("Request failed\nError: " + ex.Message);
+                var response_text = "Error: " + ex.Message;
+                return response_text;
+            }
+        }
+
+        private async void button3_Click(object sender, EventArgs e)
+        {
+            var prompt = textBox3.Text;
+            var text_response = "";
+            text_response = await AskOllama(prompt);
+            textBox4.Text = text_response;
+        }
+
+        private void textBox3_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                // Prevent the "ding" sound on Enter
+                e.SuppressKeyPress = true;
+                // Call the button click method or directly call your desired method
+                button3.PerformClick();  // Simulate a button click
+            }
+        }
+        private void textBox3_MouseDown(object sender, MouseEventArgs e)
+        {
+            textBox3.Clear();
+        }
+
+        //////////////////////////////////////////////////////////////////////////
+        ///
+        ///                 OLLAMA and TOOLS
+        ///
+        //////////////////////////////////////////////////////////////////////////
+        ///
+        public async Task<string> AskOllamaAboutStarCitizen(string prompt)
         {
             using var ollama = new OllamaApiClient();
             var chat = ollama.Chat(
@@ -62,8 +195,24 @@ namespace ScorpSCAI
 
         private async void button1_Click(object sender, EventArgs e)
         {
-            var ollama_response_text = await AskOllama(textBox1.Text);
+            var ollama_response_text = await AskOllamaAboutStarCitizen(textBox1.Text);
             textBox2.Text = ollama_response_text;
+        }
+        private void textBox1_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                // Prevent the "ding" sound on Enter
+                e.SuppressKeyPress = true;
+
+                // Call the button click method or directly call your desired method
+                button1.PerformClick();  // Simulate a button click
+            }
+        }
+
+        private void textBox1_MouseDown(object sender, MouseEventArgs e)
+        {
+            textBox1.Clear();
         }
 
         //////////////////////////////////////////////////////////////////////////
@@ -88,9 +237,9 @@ namespace ScorpSCAI
             string twitchUsername = "langdonw_ai";  //this can be whatever you set up.  It's the bot's twitch username
             string accessToken = "";  // see https://twitchtokengenerator.com/
             string channelName = "Sc0rp10n66";
-            
 
-            
+
+
 
             ConnectionCredentials credentials = new ConnectionCredentials(twitchUsername, accessToken);
             _client = new TwitchClient();
@@ -117,16 +266,17 @@ namespace ScorpSCAI
             var prompt = message;
             var text_response = "";
 
+
             if (prompt.Length >= 3 && prompt.Substring(0, 3) == "!sc")  // if we're requesting Ollama look up the Star  Citizen Wiki
             {
                 // remove first 4 chars of prompt
                 prompt = prompt.Substring(4);
-                text_response = await AskOllama(username + "says:" + prompt);
+                text_response = await AskOllamaAboutStarCitizen(username + "says:" + prompt);
 
             }
             else         // if we're not requesting Wiki data, just send the message to Ollama
             {
-                //text_response = await AskOllama(username + "says:" + prompt);  NOT SENDING TO OLLAMA FOR NOW !!!
+                //text_response = await AskOllama(username + "says: " + prompt);  NOT SENDING TO OLLAMA FOR NOW !!!
 
             }
 
@@ -137,7 +287,7 @@ namespace ScorpSCAI
                 string cleanedResponse = StripHtml(text_response);
                 SendLongMessage(cleanedResponse);
 
-                //textBoxToTwitch.Clear();
+
             }
 
             // Append the message to the TextBox with additional information
@@ -201,18 +351,12 @@ namespace ScorpSCAI
             }
 
         }
-
-        private void textBox1_KeyDown(object sender, KeyEventArgs e)
+        private void textBoxToTwitch_MouseDown(object sender, MouseEventArgs e)
         {
-            if (e.KeyCode == Keys.Enter)
-            {
-                // Prevent the "ding" sound on Enter
-                e.SuppressKeyPress = true;
-                textBox1.Clear();
-                // Call the button click method or directly call your desired method
-                button1.PerformClick();  // Simulate a button click
-            }
+            textBoxToTwitch.Clear();
         }
+
+
     }
 
 
@@ -271,7 +415,8 @@ namespace ScorpSCAI
 
             return new StarCitizenWiki
             {
-                Description = "" + search_term + page_extract,
+                search_term = search_term,
+                Description = "" + page_extract,
             };
         }
 
@@ -281,7 +426,7 @@ namespace ScorpSCAI
                 try
                 {
                     var srsearch = prompt;
-                    var (firstPageExtract, concatenatedTitles) = await SearchStarCitizenAsync(srsearch);
+                    var (firstPageExtract, concatenatedTitles) = await SearchStarCitizenWikiAsync(srsearch);
                     Debug.WriteLine("Request was successful");
                     Debug.WriteLine("First Page Extract: " + firstPageExtract);
                     Debug.WriteLine("Concatenated Titles: " + concatenatedTitles);
@@ -303,7 +448,7 @@ namespace ScorpSCAI
 
 
 
-        public static async Task<(string firstPageExtract, string concatenatedTitles)> SearchStarCitizenAsync(string srsearch)
+        public static async Task<(string firstPageExtract, string concatenatedTitles)> SearchStarCitizenWikiAsync(string srsearch)
         {
             var url = $"https://starcitizen.tools/api.php?action=query&format=json&list=search&continue=-%7C%7C&formatversion=1&srsearch={Uri.EscapeDataString(srsearch)}&srnamespace=0";
 
@@ -317,7 +462,7 @@ namespace ScorpSCAI
                 var searchResults = jsonResponse["query"]["search"];
                 int firstPageId = (int)searchResults[0]["pageid"];
                 StringBuilder concatenatedTitles = new StringBuilder();
-                string firstPageExtract = await GetStarCitizenPageAsync(firstPageId);
+                string firstPageExtract = await GetStarCitizenWikiPageAsync(firstPageId);
 
                 foreach (var result in searchResults)
                 {
@@ -332,7 +477,7 @@ namespace ScorpSCAI
             }
         }
 
-        public static async Task<string> GetStarCitizenPageAsync(int pageId)
+        public static async Task<string> GetStarCitizenWikiPageAsync(int pageId)
         {
             var url = $"https://starcitizen.tools/api.php?action=query&format=json&prop=extracts&pageids={pageId}&formatversion=1&exchars=1200";
 
